@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YT Downloader</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --border: #262b38;
+    --text: #e8eaf0;
+    --muted: #8a90a3;
+    --accent: #5b8def;
+    --green: #4caf7d;
+    --red: #f07070;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 440px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px;
+  }
+  h1 {
+    font-size: 1.25rem;
+    margin: 0 0 4px;
+  }
+  p.sub {
+    margin: 0 0 24px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  input[type="text"], select {
+    width: 100%;
+    padding: 11px 12px;
+    background: #0f1115;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.95rem;
+    margin-bottom: 18px;
+  }
+  input[type="text"]:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  button {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  #status {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  #status.error { color: var(--red); }
+  #preview {
+    display: none;
+    margin-bottom: 18px;
+    gap: 12px;
+    align-items: center;
+  }
+  #preview img {
+    width: 72px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  #preview span {
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+
+  /* --- Progress dialog --- */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .overlay.open {
+    display: flex;
+  }
+  .dialog {
+    width: 100%;
+    max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 26px;
+  }
+  .dialog h2 {
+    font-size: 1.05rem;
+    margin: 0 0 4px;
+  }
+  .dialog .dialog-sub {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin: 0 0 20px;
+    word-break: break-word;
+  }
+  .progress-track {
+    width: 100%;
+    height: 10px;
+    background: #0f1115;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+  .progress-fill.done { background: var(--green); }
+  .progress-fill.error { background: var(--red); }
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 20px;
+  }
+  .progress-meta .pct {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .dialog-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .dialog-actions button {
+    margin: 0;
+  }
+  .btn-secondary {
+    background: #1f2330;
+    border: 1px solid var(--border);
+  }
+  .dialog-msg {
+    font-size: 0.85rem;
+    margin-top: 14px;
+    color: var(--muted);
+  }
+  .dialog-msg.error { color: var(--red); }
+  .dialog-msg.done { color: var(--green); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>YouTube Downloader</h1>
+    <p class="sub">Paste a link, pick a quality, download.</p>
+
+    <label for="url">YouTube URL</label>
+    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." />
+
+    <div id="preview">
+      <img id="preview-thumb" src="" alt="">
+      <span id="preview-title"></span>
+    </div>
+
+    <label for="quality">Quality</label>
+    <select id="quality">
+      {% for q in qualities %}
+      <option value="{{ q }}">{{ q }}</option>
+      {% endfor %}
+    </select>
+
+    <button id="downloadBtn">Download</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- Progress dialog -->
+  <div class="overlay" id="overlay">
+    <div class="dialog">
+      <h2 id="dialogTitle">Downloading...</h2>
+      <p class="dialog-sub" id="dialogSub"></p>
+
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-meta">
+        <span id="metaSpeed">-- </span>
+        <span class="pct" id="metaPct">0%</span>
+        <span id="metaEta">--</span>
+      </div>
+
+      <div class="dialog-actions">
+        <button id="pauseResumeBtn" class="btn-secondary">Pause</button>
+        <button id="closeDialogBtn" class="btn-secondary" disabled>Close</button>
+      </div>
+      <div class="dialog-msg" id="dialogMsg"></div>
+    </div>
+  </div>
+
+<script>
+const urlInput = document.getElementById('url');
+const qualitySelect = document.getElementById('quality');
+const downloadBtn = document.getElementById('downloadBtn');
+const statusEl = document.getElementById('status');
+const preview = document.getElementById('preview');
+const previewThumb = document.getElementById('preview-thumb');
+const previewTitle = document.getElementById('preview-title');
+
+const overlay = document.getElementById('overlay');
+const dialogSub = document.getElementById('dialogSub');
+const progressFill = document.getElementById('progressFill');
+const metaSpeed = document.getElementById('metaSpeed');
+const metaPct = document.getElementById('metaPct');
+const metaEta = document.getElementById('metaEta');
+const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+const closeDialogBtn = document.getElementById('closeDialogBtn');
+const dialogMsg = document.getElementById('dialogMsg');
+
+let infoTimeout;
+let pollTimer = null;
+let currentJobId = null;
+let isPaused = false;
+
+preview.style.display = 'none';
+
+urlInput.addEventListener('input', () => {
+  clearTimeout(infoTimeout);
+  preview.style.display = 'none';
+  statusEl.textContent = '';
+  statusEl.className = '';
+  const url = urlInput.value.trim();
+  if (!url) return;
+  infoTimeout = setTimeout(() => fetchInfo(url), 500);
+});
+
+async function fetchInfo(url) {
+  try {
+    const res = await fetch('/api/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok) return;
+    previewThumb.src = data.thumbnail || '';
+    previewTitle.textContent = data.title || '';
+    preview.style.display = 'flex';
+  } catch (e) {
+    // ignore preview errors
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '--';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let val = bytes;
+  while (val >= 1024 && i < units.length - 1) {
+    val /= 1024;
+    i++;
+  }
+  return `${val.toFixed(1)} ${units[i]}`;
+}
+
+function formatSpeed(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec <= 0) return '-- /s';
+  return `${formatBytes(bytesPerSec)}/s`;
+}
+
+function formatEta(seconds) {
+  if (seconds === null || seconds === undefined) return '--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')} left`;
+}
+
+function resetDialog() {
+  progressFill.style.width = '0%';
+  progressFill.classList.remove('done', 'error');
+  metaPct.textContent = '0%';
+  metaSpeed.textContent = '-- ';
+  metaEta.textContent = '--';
+  dialogMsg.textContent = '';
+  dialogMsg.className = 'dialog-msg';
+  pauseResumeBtn.textContent = 'Pause';
+  pauseResumeBtn.disabled = false;
+  closeDialogBtn.disabled = true;
+  isPaused = false;
+}
+
+function openDialog(title) {
+  resetDialog();
+  dialogSub.textContent = title || '';
+  overlay.classList.add('open');
+}
+
+function closeDialog() {
+  overlay.classList.remove('open');
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+  currentJobId = null;
+}
+
+closeDialogBtn.addEventListener('click', closeDialog);
+
+pauseResumeBtn.addEventListener('click', async () => {
+  if (!currentJobId) return;
+  const action = isPaused ? 'resume' : 'pause';
+  pauseResumeBtn.disabled = true;
+  try {
+    await fetch(`/api/download/${action}/${currentJobId}`, { method: 'POST' });
+    isPaused = !isPaused;
+    pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
+  } catch (e) {
+    // ignore, next poll will reflect real state
+  } finally {
+    pauseResumeBtn.disabled = false;
+  }
+});
+
+downloadBtn.addEventListener('click', async () => {
+  const url = urlInput.value.trim();
+  const quality = qualitySelect.value;
+
+  if (!url) {
+    statusEl.textContent = 'Paste a YouTube link first.';
+    statusEl.className = 'error';
+    return;
+  }
+
+  statusEl.textContent = '';
+  statusEl.className = '';
+  downloadBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/download/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, quality })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not start download.');
+
+    currentJobId = data.job_id;
+    openDialog(`${quality} • ${previewTitle.textContent || url}`);
+    pollTimer = setInterval(pollProgress, 800);
+  } catch (e) {
+    statusEl.textContent = e.message;
+    statusEl.className = 'error';
+  } finally {
+    downloadBtn.disabled = false;
+  }
+});
+
+async function pollProgress() {
+  if (!currentJobId) return;
+  try {
+    const res = await fetch(`/api/download/progress/${currentJobId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Lost track of the download.');
+
+    isPaused = !!data.paused;
+    pauseResumeBtn.textContent = isPaused ? 'Resume' : 'Pause';
+
+    if (data.status === 'error') {
+      progressFill.classList.add('error');
+      dialogMsg.textContent = data.error || 'Something went wrong.';
+      dialogMsg.className = 'dialog-msg error';
+      pauseResumeBtn.disabled = true;
+      closeDialogBtn.disabled = false;
+      clearInterval(pollTimer);
+      pollTimer = null;
+      return;
+    }
+
+    if (data.status === 'processing') {
+      metaPct.textContent = 'Merging...';
+      metaSpeed.textContent = '-- ';
+      metaEta.textContent = '--';
+      return;
+    }
+
+    if (typeof data.percent === 'number') {
+      progressFill.style.width = `${data.percent}%`;
+      metaPct.textContent = `${data.percent}%`;
+    }
+    metaSpeed.textContent = formatSpeed(data.speed);
+    metaEta.textContent = formatEta(data.eta);
+
+    if (data.status === 'finished') {
+      progressFill.style.width = '100%';
+      progressFill.classList.add('done');
+      metaPct.textContent = '100%';
+      dialogMsg.textContent = 'Done — starting your download...';
+      dialogMsg.className = 'dialog-msg done';
+      pauseResumeBtn.disabled = true;
+      closeDialogBtn.disabled = false;
+      clearInterval(pollTimer);
+      pollTimer = null;
+
+      // Trigger the actual file save via a normal navigation download.
+      const a = document.createElement('a');
+      a.href = `/api/download/file/${currentJobId}`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  } catch (e) {
+    dialogMsg.textContent = e.message;
+    dialogMsg.className = 'dialog-msg error';
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+</script>
+</body>
+</html>
