@@ -251,6 +251,7 @@ let infoTimeout;
 let pollTimer = null;
 let currentJobId = null;
 let isPaused = false;
+let downloadTriggered = false;
 
 preview.style.display = 'none';
 
@@ -317,6 +318,7 @@ function resetDialog() {
   pauseResumeBtn.disabled = false;
   closeDialogBtn.disabled = true;
   isPaused = false;
+  downloadTriggered = false;
 }
 
 function openDialog(title) {
@@ -418,30 +420,57 @@ async function pollProgress() {
     metaSpeed.textContent = formatSpeed(data.speed);
     metaEta.textContent = formatEta(data.eta);
 
-    if (data.status === 'finished') {
+    if (data.status === 'finished' && !downloadTriggered) {
+      downloadTriggered = true;
       progressFill.style.width = '100%';
       progressFill.classList.add('done');
       metaPct.textContent = '100%';
-      dialogMsg.textContent = 'Done — starting your download...';
+      dialogMsg.textContent = 'Done — saving your file...';
       dialogMsg.className = 'dialog-msg done';
       pauseResumeBtn.disabled = true;
-      closeDialogBtn.disabled = false;
       clearInterval(pollTimer);
       pollTimer = null;
 
-      // Trigger the actual file save via a normal navigation download.
-      const a = document.createElement('a');
-      a.href = `/api/download/file/${currentJobId}`;
-      a.download = '';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      await saveFinishedFile(currentJobId);
     }
   } catch (e) {
     dialogMsg.textContent = e.message;
     dialogMsg.className = 'dialog-msg error';
     clearInterval(pollTimer);
     pollTimer = null;
+  }
+}
+
+async function saveFinishedFile(jobId) {
+  try {
+    const res = await fetch(`/api/download/file/${jobId}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Could not retrieve the finished file.');
+    }
+
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)"?/i);
+    const filename = match ? decodeURIComponent(match[1]) : 'download';
+
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+
+    dialogMsg.textContent = 'Saved to your downloads.';
+    dialogMsg.className = 'dialog-msg done';
+  } catch (e) {
+    progressFill.classList.add('error');
+    dialogMsg.textContent = e.message;
+    dialogMsg.className = 'dialog-msg error';
+  } finally {
+    closeDialogBtn.disabled = false;
   }
 }
 </script>
